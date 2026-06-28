@@ -104,6 +104,8 @@ const QIGONG_DELAY = 0.5
 const QIGONG_HEAL_RATE = 8
 
 let chi = 0
+let chiStage = 1
+let chiStageTextTimer = 0
 const CHI_MAX = 100
 const CHI_PER_HIT = 12
 const CHI_PULSE_THRESHOLD = 50
@@ -113,6 +115,8 @@ let ironShirtTimer = 0
 const IRON_SHIRT_COST = 40
 const IRON_SHIRT_DURATION = 3
 const IRON_SHIRT_COLOR = 0x444444
+// Iron Qigong power boost: attacks hit harder while Iron Shirt is active
+const IRON_SHIRT_DAMAGE_MULT = 1.2
 const PULSE_SPEED = 0.15
 const PULSE_REMOVE_X = 10
 const PULSE_DAMAGE = 35
@@ -145,11 +149,26 @@ function knockDownOpponent() {
   opponentFallTimer = FALL_DURATION
 }
 
-// Iron Dragon glows orange during the Bagua advantage, white at full Chi, otherwise its normal green.
+// Iron Dragon's resting color ramps through five Chi stages: green → teal → gold → orange → white
+const CHI_STAGE_COLORS = [0x00ff88, 0x00ccff, 0xffd700, 0xff6600, 0xffffff]
+function getChiStage() {
+  if (chi < 20) return 1
+  if (chi < 40) return 2
+  if (chi < 60) return 3
+  if (chi < 80) return 4
+  return 5
+}
+
+// Iron Shirt grey and Bagua orange override the Chi-stage color; otherwise color by Chi stage.
 function ironDragonBaseColor() {
   if (ironShirtActive) return IRON_SHIRT_COLOR
   if (baguaBuffTimer > 0) return 0xff8800
-  return chi >= CHI_MAX ? 0xffffff : 0x00ff88
+  return CHI_STAGE_COLORS[getChiStage() - 1]
+}
+
+// Iron Qigong power boost applied to every Iron Dragon attack while Iron Shirt is active
+function damageBoost() {
+  return ironShirtActive ? IRON_SHIRT_DAMAGE_MULT : 1
 }
 
 // Dash to the side of the opponent and enter the advantageous Bagua stance (side: -1 left, +1 right)
@@ -219,6 +238,10 @@ const healingText = document.createElement('div')
 healingText.style.cssText = "position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);color:#00ff88;font-family:Arial;font-size:40px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #00ff88;pointer-events:none;"
 healingText.textContent = 'HEALING'
 document.body.appendChild(healingText)
+
+const chiStageText = document.createElement('div')
+chiStageText.style.cssText = "position:fixed;top:18%;left:50%;transform:translate(-50%,-50%);font-family:Arial;font-size:36px;font-weight:bold;z-index:9999;display:none;pointer-events:none;"
+document.body.appendChild(chiStageText)
 
 const wardOffText = document.createElement('div')
 wardOffText.style.cssText = "position:fixed;top:35%;left:50%;transform:translate(-50%,-50%);color:#00ffff;font-family:Arial;font-size:48px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #00ffff;pointer-events:none;"
@@ -296,7 +319,7 @@ window.addEventListener('keydown', e => {
     const redirectDir = opponent.position.x > ironDragon.position.x ? 1 : -1
     opponent.position.x += redirectDir * 2
     opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
-    opponentHealth = Math.max(0, opponentHealth - REDIRECT_DAMAGE)
+    opponentHealth = Math.max(0, opponentHealth - REDIRECT_DAMAGE * damageBoost())
     updateHealthBars()
     // Flash Iron Dragon blue to show the redirect activated
     ironDragon.material.color.setHex(0x3399ff)
@@ -325,7 +348,7 @@ window.addEventListener('keydown', e => {
     redirectWindow = 0
     // Cancel the incoming damage and counter
     ironDragonHealth = Math.min(100, ironDragonHealth + lastDamageTaken)
-    opponentHealth = Math.max(0, opponentHealth - WARD_OFF_DAMAGE)
+    opponentHealth = Math.max(0, opponentHealth - WARD_OFF_DAMAGE * damageBoost())
     updateHealthBars()
     // Tip the opponent backward briefly
     opponent.rotation.z = -0.5
@@ -343,7 +366,7 @@ window.addEventListener('keydown', e => {
     const pushDir = opponent.position.x > ironDragon.position.x ? 1 : -1
     opponent.position.x += pushDir * PUSH_KNOCKBACK
     opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
-    opponentHealth = Math.max(0, opponentHealth - PUSH_DAMAGE)
+    opponentHealth = Math.max(0, opponentHealth - PUSH_DAMAGE * damageBoost())
     updateHealthBars()
     opponent.material.color.setHex(0xffffff)
     opponentFlashTimer = 0.1
@@ -360,7 +383,7 @@ window.addEventListener('keydown', e => {
     const momentumDir = ironDragon.position.x > opponent.position.x ? 1 : -1
     opponent.position.x = ironDragon.position.x + momentumDir * 2
     opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
-    opponentHealth = Math.max(0, opponentHealth - ROLLBACK_DAMAGE)
+    opponentHealth = Math.max(0, opponentHealth - ROLLBACK_DAMAGE * damageBoost())
     updateHealthBars()
     // Show ROLLBACK text in purple
     rollbackText.style.display = 'block'
@@ -374,7 +397,7 @@ window.addEventListener('keydown', e => {
     pressCooldown = PRESS_COOLDOWN
     const pressDistance = Math.abs(opponent.position.x - ironDragon.position.x)
     if (pressDistance <= PRESS_RANGE) {
-      opponentHealth = Math.max(0, opponentHealth - PRESS_DAMAGE)
+      opponentHealth = Math.max(0, opponentHealth - PRESS_DAMAGE * damageBoost())
       updateHealthBars()
       opponent.material.color.setHex(0xffffff)
       opponentFlashTimer = 0.1
@@ -406,6 +429,9 @@ function resetRoundState() {
   ironDragonHealth = 100
   opponentHealth = 100
   chi = 0
+  chiStage = 1
+  chiStageTextTimer = 0
+  chiStageText.style.display = 'none'
   ironDragonAttacking = false
   attackTimer = 0
   attackHit = false
@@ -535,7 +561,7 @@ function animate(timestamp) {
       console.log('Dragon Pulse hit opponent at x:', dragonPulse.position.x.toFixed(3))
       scene.remove(dragonPulse)
       dragonPulse = null
-      opponentHealth = Math.max(0, opponentHealth - PULSE_DAMAGE)
+      opponentHealth = Math.max(0, opponentHealth - PULSE_DAMAGE * damageBoost())
       updateHealthBars()
       opponent.material.color.setHex(0xffffff)
       opponentFlashTimer = 0.1
@@ -579,7 +605,7 @@ function animate(timestamp) {
       const distance = Math.abs(ironDragon.position.x - opponent.position.x)
       if (distance < ATTACK_RANGE) {
         attackHit = true
-        const attackDamage = baguaBuffTimer > 0 ? J_DAMAGE * BAGUA_DAMAGE_MULT : J_DAMAGE
+        const attackDamage = (baguaBuffTimer > 0 ? J_DAMAGE * BAGUA_DAMAGE_MULT : J_DAMAGE) * damageBoost()
         opponentHealth = Math.max(0, opponentHealth - attackDamage)
         updateHealthBars()
         chi = Math.min(CHI_MAX, chi + CHI_PER_HIT)
@@ -740,6 +766,28 @@ function animate(timestamp) {
     if (opponentFallTimer <= 0) {
       opponent.rotation.z = 0
     }
+  }
+
+  // Chi stages: announce stage changes and keep Iron Dragon's resting color in sync with Chi
+  const newChiStage = getChiStage()
+  if (newChiStage !== chiStage) {
+    chiStage = newChiStage
+    const hex = '#' + CHI_STAGE_COLORS[chiStage - 1].toString(16).padStart(6, '0')
+    chiStageText.textContent = 'CHI STAGE ' + chiStage
+    chiStageText.style.color = hex
+    chiStageText.style.textShadow = '0 0 20px ' + hex
+    chiStageText.style.display = 'block'
+    chiStageTextTimer = 1
+  }
+  if (chiStageTextTimer > 0) {
+    chiStageTextTimer -= delta
+    if (chiStageTextTimer <= 0) {
+      chiStageText.style.display = 'none'
+    }
+  }
+  // Live color update so the stage color shows as Chi changes (skip while flashing or attacking)
+  if (ironDragonFlashTimer <= 0 && !ironDragonAttacking) {
+    ironDragon.material.color.setHex(ironDragonBaseColor())
   }
 
   // Iron Qigong meditation: heal after standing idle, stopping instantly on input or attack
