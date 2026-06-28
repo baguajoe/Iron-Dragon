@@ -62,6 +62,7 @@ const OPPONENT_ATTACK_INTERVAL = 3
 const OPPONENT_ATTACK_RANGE = 2.5
 const OPPONENT_DAMAGE = 10
 const OPPONENT_SPEED = 0.02
+const AI_MIN_DISTANCE = 3
 let ironDragonFlashTimer = 0
 let roundTimer = 0
 const AI_START_DELAY = 2
@@ -71,11 +72,13 @@ const CHI_MAX = 100
 const CHI_PER_HIT = 12
 const CHI_PULSE_THRESHOLD = 50
 const CHI_PULSE_COST = 50
-const PULSE_SPEED = 0.08
-const PULSE_REMOVE_X = 8
+const PULSE_SPEED = 0.15
+const PULSE_REMOVE_X = 10
 const PULSE_DAMAGE = 35
 const PULSE_HIT_RANGE = 1.2
 let dragonPulse = null
+let pulseDirection = 1
+let pulseTravelTimer = 0
 
 const J_DAMAGE = 15
 // Knockdown: only the Dragon Pulse knocks the opponent down
@@ -155,7 +158,9 @@ window.addEventListener('keydown', e => {
       new THREE.BoxGeometry(2, 2, 2),
       new THREE.MeshBasicMaterial({ color: 0xffff00 })
     )
-    dragonPulse.position.set(ironDragon.position.x + 2, 1, ironDragon.position.z)
+    pulseDirection = opponent.position.x > ironDragon.position.x ? 1 : -1
+    pulseTravelTimer = 0.5
+    dragonPulse.position.set(ironDragon.position.x + 1.5 * pulseDirection, 1, 0)
     scene.add(dragonPulse)
     console.log('Dragon Pulse created at x:', dragonPulse.position.x)
     // Drop out of full-power white once Chi falls below max (unless mid-attack/flash)
@@ -223,9 +228,10 @@ function animate(timestamp) {
 
   // Dragon Pulse: update BEFORE the hitstop check so it keeps moving during hitstop
   if (dragonPulse) {
-    dragonPulse.position.x += PULSE_SPEED
+    dragonPulse.position.x += PULSE_SPEED * pulseDirection
+    pulseTravelTimer -= delta
     console.log('Dragon Pulse x:', dragonPulse.position.x.toFixed(3))
-    if (Math.abs(dragonPulse.position.x - opponent.position.x) < PULSE_HIT_RANGE) {
+    if (pulseTravelTimer <= 0 && Math.abs(dragonPulse.position.x - opponent.position.x) < PULSE_HIT_RANGE) {
       console.log('Dragon Pulse hit opponent at x:', dragonPulse.position.x.toFixed(3))
       scene.remove(dragonPulse)
       dragonPulse = null
@@ -237,7 +243,7 @@ function animate(timestamp) {
       if (opponentHealth <= 0) {
         showWinner('IRON DRAGON WINS!')
       }
-    } else if (dragonPulse.position.x >= PULSE_REMOVE_X) {
+    } else if (Math.abs(dragonPulse.position.x) >= PULSE_REMOVE_X) {
       console.log('Dragon Pulse removed at x:', dragonPulse.position.x.toFixed(3))
       scene.remove(dragonPulse)
       dragonPulse = null
@@ -290,7 +296,7 @@ function animate(timestamp) {
   roundTimer += delta
   const aiActive = roundTimer >= AI_START_DELAY
   const aiDistance = Math.abs(opponent.position.x - ironDragon.position.x)
-  if (aiActive && aiDistance > OPPONENT_ATTACK_RANGE - 0.5) {
+  if (aiActive && aiDistance > AI_MIN_DISTANCE) {
     const aiDirection = ironDragon.position.x < opponent.position.x ? -1 : 1
     opponent.position.x += aiDirection * OPPONENT_SPEED
     opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
