@@ -644,8 +644,12 @@ const titleScreen = document.createElement('div')
 titleScreen.style.cssText = "position:fixed;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10000;font-family:Arial;"
 const titleHeading = document.createElement('div')
 titleHeading.textContent = 'IRON DRAGON'
-titleHeading.style.cssText = "color:#ffd700;font-size:84px;font-weight:bold;text-shadow:0 0 30px #ffd700;letter-spacing:6px;margin-bottom:48px;"
+titleHeading.style.cssText = "color:#ffd700;font-size:84px;font-weight:bold;text-shadow:0 0 30px #ffd700, 0 0 60px #ffaa00;letter-spacing:6px;margin-bottom:12px;"
 titleScreen.appendChild(titleHeading)
+const titleSubtitle = document.createElement('div')
+titleSubtitle.textContent = 'THE CHI AWAKENS'
+titleSubtitle.style.cssText = "color:#ffffff;font-size:24px;font-weight:bold;letter-spacing:4px;margin-bottom:48px;text-shadow:0 0 8px #ffffff;"
+titleScreen.appendChild(titleSubtitle)
 const titleButtons = document.createElement('div')
 titleButtons.style.cssText = "display:flex;gap:32px;"
 titleScreen.appendChild(titleButtons)
@@ -655,8 +659,8 @@ function makeMenuButton(label) {
   b.style.cssText = "padding:18px 36px;font-size:22px;font-weight:bold;font-family:Arial;color:#ffd700;background:#1a0a2e;border:2px solid #ffd700;border-radius:8px;cursor:pointer;"
   return b
 }
-const fightBtn = makeMenuButton('FIGHT MODE')
-const exploreBtn = makeMenuButton('EXPLORE MODE')
+const fightBtn = makeMenuButton('FIGHT')
+const exploreBtn = makeMenuButton('EXPLORE')
 titleButtons.appendChild(fightBtn)
 titleButtons.appendChild(exploreBtn)
 document.body.appendChild(titleScreen)
