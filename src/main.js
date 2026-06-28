@@ -67,6 +67,23 @@ let redirectWindow = 0
 let lastDamageTaken = 0
 const REDIRECT_WINDOW_DURATION = 0.5
 const REDIRECT_DAMAGE = 20
+// Ward Off (U): deflect an incoming attack. Push (O): no-Chi palm strike on a cooldown.
+let wardOffTimer = 0
+let wardOffTextTimer = 0
+let pushCooldown = 0
+const WARD_OFF_DAMAGE = 10
+const WARD_OFF_ROT_DURATION = 0.5
+const PUSH_DAMAGE = 12
+const PUSH_KNOCKBACK = 3
+const PUSH_COOLDOWN = 1
+// Rollback (Y): grab momentum and pull the opponent past. Press (P): unblockable close strike.
+let rollbackTextTimer = 0
+let pressCooldown = 0
+let pressTextTimer = 0
+const ROLLBACK_DAMAGE = 15
+const PRESS_DAMAGE = 25
+const PRESS_RANGE = 1.5
+const PRESS_COOLDOWN = 2
 let ironDragonFlashTimer = 0
 let roundTimer = 0
 const AI_START_DELAY = 2
@@ -105,6 +122,8 @@ const DOUBLE_TAP_WINDOW = 0.3
 const BAGUA_BUFF_DURATION = 1
 const BAGUA_DAMAGE_MULT = 1.5
 const BAGUA_STEP_OFFSET = 2
+let baguaDashing = false
+let baguaTargetX = 0
 // Knockdown: only the Dragon Pulse knocks the opponent down
 const FALL_ROTATION = 1.5
 const FALL_KNOCKBACK = 2
@@ -127,8 +146,8 @@ function ironDragonBaseColor() {
 
 // Dash to the side of the opponent and enter the advantageous Bagua stance (side: -1 left, +1 right)
 function baguaStep(side) {
-  ironDragon.position.x = opponent.position.x + side * BAGUA_STEP_OFFSET
-  ironDragon.position.x = Math.max(-7, Math.min(7, ironDragon.position.x))
+  baguaTargetX = Math.max(-7, Math.min(7, opponent.position.x + side * BAGUA_STEP_OFFSET))
+  baguaDashing = true
   baguaBuffTimer = BAGUA_BUFF_DURATION
   if (!ironDragonAttacking) {
     ironDragon.material.color.setHex(0xff8800)
@@ -186,11 +205,26 @@ const healingText = document.createElement('div')
 healingText.style.cssText = "position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);color:#00ff88;font-family:Arial;font-size:40px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #00ff88;pointer-events:none;"
 healingText.textContent = 'HEALING'
 document.body.appendChild(healingText)
+
+const wardOffText = document.createElement('div')
+wardOffText.style.cssText = "position:fixed;top:35%;left:50%;transform:translate(-50%,-50%);color:#00ffff;font-family:Arial;font-size:48px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #00ffff;pointer-events:none;"
+wardOffText.textContent = 'WARD OFF'
+document.body.appendChild(wardOffText)
+
+const rollbackText = document.createElement('div')
+rollbackText.style.cssText = "position:fixed;top:35%;left:50%;transform:translate(-50%,-50%);color:#aa44ff;font-family:Arial;font-size:48px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #aa44ff;pointer-events:none;"
+rollbackText.textContent = 'ROLLBACK'
+document.body.appendChild(rollbackText)
+
+const pressText = document.createElement('div')
+pressText.style.cssText = "position:fixed;top:55%;left:50%;transform:translate(-50%,-50%);color:#ffffff;font-family:Arial;font-size:48px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #ffffff;pointer-events:none;"
+pressText.textContent = 'PRESS'
+document.body.appendChild(pressText)
 let redirectTextTimer = 0
 
 const controls = document.createElement('div')
 controls.style.cssText = "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);color:#666;font-family:Arial;font-size:12px;z-index:999;text-align:center;"
-controls.innerHTML = "A/D = Move Iron Dragon &nbsp;|&nbsp; Arrow Keys = Move Opponent &nbsp;|&nbsp; J = Attack &nbsp;|&nbsp; K = Dragon Pulse (50 Chi) &nbsp;|&nbsp; L = Tai Chi Redirect &nbsp;|&nbsp; AA/DD = Bagua Step &nbsp;|&nbsp; I = Iron Shirt (40 Chi)"
+controls.innerHTML = "A/D = Move Iron Dragon &nbsp;|&nbsp; Arrow Keys = Move Opponent &nbsp;|&nbsp; J = Attack &nbsp;|&nbsp; K = Dragon Pulse (50 Chi) &nbsp;|&nbsp; L = Tai Chi Redirect &nbsp;|&nbsp; AA/DD = Bagua Step &nbsp;|&nbsp; I = Iron Shirt (40 Chi) &nbsp;|&nbsp; U = Ward Off &nbsp;|&nbsp; O = Push &nbsp;|&nbsp; Y = Rollback &nbsp;|&nbsp; P = Press"
 document.body.appendChild(controls)
 
 window.addEventListener('keydown', e => {
@@ -272,6 +306,72 @@ window.addEventListener('keydown', e => {
       ironDragon.material.color.setHex(ironDragonBaseColor())
     }
   }
+  // Ward Off: press U while the opponent is attacking to deflect the blow
+  if (e.code === 'KeyU' && !gameOver && redirectWindow > 0) {
+    redirectWindow = 0
+    // Cancel the incoming damage and counter
+    ironDragonHealth = Math.min(100, ironDragonHealth + lastDamageTaken)
+    opponentHealth = Math.max(0, opponentHealth - WARD_OFF_DAMAGE)
+    updateHealthBars()
+    // Tip the opponent backward briefly
+    opponent.rotation.z = -0.5
+    wardOffTimer = WARD_OFF_ROT_DURATION
+    // Show WARD OFF text in cyan
+    wardOffText.style.display = 'block'
+    wardOffTextTimer = 0.8
+    if (opponentHealth <= 0) {
+      showWinner('IRON DRAGON WINS!')
+    }
+  }
+  // Push: double palm push, no Chi cost, knocks the opponent back on a short cooldown
+  if (e.code === 'KeyO' && !gameOver && pushCooldown <= 0) {
+    pushCooldown = PUSH_COOLDOWN
+    const pushDir = opponent.position.x > ironDragon.position.x ? 1 : -1
+    opponent.position.x += pushDir * PUSH_KNOCKBACK
+    opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
+    opponentHealth = Math.max(0, opponentHealth - PUSH_DAMAGE)
+    updateHealthBars()
+    opponent.material.color.setHex(0xffffff)
+    opponentFlashTimer = 0.1
+    if (opponentHealth <= 0) {
+      showWinner('IRON DRAGON WINS!')
+    }
+  }
+  // Rollback: press Y while the opponent is attacking to grab their momentum and pull them past
+  if (e.code === 'KeyY' && !gameOver && redirectWindow > 0) {
+    redirectWindow = 0
+    // Cancel the incoming damage
+    ironDragonHealth = Math.min(100, ironDragonHealth + lastDamageTaken)
+    // Continue their momentum: drag them 2 units past Iron Dragon in their travel direction
+    const momentumDir = ironDragon.position.x > opponent.position.x ? 1 : -1
+    opponent.position.x = ironDragon.position.x + momentumDir * 2
+    opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
+    opponentHealth = Math.max(0, opponentHealth - ROLLBACK_DAMAGE)
+    updateHealthBars()
+    // Show ROLLBACK text in purple
+    rollbackText.style.display = 'block'
+    rollbackTextTimer = 0.8
+    if (opponentHealth <= 0) {
+      showWinner('IRON DRAGON WINS!')
+    }
+  }
+  // Press: two-handed unblockable forward strike, big damage at close range, long cooldown
+  if (e.code === 'KeyP' && !gameOver && pressCooldown <= 0) {
+    pressCooldown = PRESS_COOLDOWN
+    const pressDistance = Math.abs(opponent.position.x - ironDragon.position.x)
+    if (pressDistance <= PRESS_RANGE) {
+      opponentHealth = Math.max(0, opponentHealth - PRESS_DAMAGE)
+      updateHealthBars()
+      opponent.material.color.setHex(0xffffff)
+      opponentFlashTimer = 0.1
+      if (opponentHealth <= 0) {
+        showWinner('IRON DRAGON WINS!')
+      }
+    }
+    // Show PRESS text in white
+    pressText.style.display = 'block'
+    pressTextTimer = 0.8
+  }
 })
 
 function updateHealthBars() {
@@ -310,7 +410,17 @@ window.addEventListener('keydown', e => {
     redirectWindow = 0
     redirectTextTimer = 0
     redirectText.style.display = 'none'
+    wardOffTimer = 0
+    wardOffTextTimer = 0
+    wardOffText.style.display = 'none'
+    pushCooldown = 0
+    rollbackTextTimer = 0
+    rollbackText.style.display = 'none'
+    pressCooldown = 0
+    pressTextTimer = 0
+    pressText.style.display = 'none'
     baguaBuffTimer = 0
+    baguaDashing = false
     lastTapTimeA = -Infinity
     lastTapTimeD = -Infinity
     ironShirtActive = false
@@ -376,6 +486,15 @@ function animate(timestamp) {
   if (keys['KeyD']) ironDragon.position.x += 0.05
   if (keys['ArrowLeft']) opponent.position.x -= 0.05
   if (keys['ArrowRight']) opponent.position.x += 0.05
+
+  // Bagua dash: smoothly slide toward the side of the opponent, then snap and stop
+  if (baguaDashing) {
+    ironDragon.position.x += (baguaTargetX - ironDragon.position.x) * 0.3
+    if (Math.abs(baguaTargetX - ironDragon.position.x) <= 0.1) {
+      ironDragon.position.x = baguaTargetX
+      baguaDashing = false
+    }
+  }
 
   ironDragon.position.x = Math.max(-7, Math.min(7, ironDragon.position.x))
   opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
@@ -468,6 +587,42 @@ function animate(timestamp) {
     redirectTextTimer -= delta
     if (redirectTextTimer <= 0) {
       redirectText.style.display = 'none'
+    }
+  }
+
+  if (wardOffTimer > 0) {
+    wardOffTimer -= delta
+    if (wardOffTimer <= 0) {
+      opponent.rotation.z = 0
+    }
+  }
+
+  if (wardOffTextTimer > 0) {
+    wardOffTextTimer -= delta
+    if (wardOffTextTimer <= 0) {
+      wardOffText.style.display = 'none'
+    }
+  }
+
+  if (pushCooldown > 0) {
+    pushCooldown -= delta
+  }
+
+  if (rollbackTextTimer > 0) {
+    rollbackTextTimer -= delta
+    if (rollbackTextTimer <= 0) {
+      rollbackText.style.display = 'none'
+    }
+  }
+
+  if (pressCooldown > 0) {
+    pressCooldown -= delta
+  }
+
+  if (pressTextTimer > 0) {
+    pressTextTimer -= delta
+    if (pressTextTimer <= 0) {
+      pressText.style.display = 'none'
     }
   }
 
