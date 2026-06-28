@@ -150,6 +150,10 @@ let opponentFlashTimer = 0
 let attackHit = false
 let gameOver = false
 
+// Game mode: 'fight' (the existing battle) or 'explore'. A title screen gates the start.
+let gameMode = 'fight'
+let onTitle = true
+
 // Best of 3 rounds: first to ROUNDS_TO_WIN takes the match
 const roundsWon = { ironDragon: 0, opponent: 0 }
 const ROUNDS_TO_WIN = 2
@@ -361,6 +365,8 @@ controls.innerHTML = "A/D = Move Iron Dragon &nbsp;|&nbsp; Arrow Keys = Move Opp
 document.body.appendChild(controls)
 
 window.addEventListener('keydown', e => {
+  // Fight inputs are inert on the title screen and in explore mode
+  if (onTitle || gameMode !== 'fight') return
   // Bagua circle stepping: a second A/D tap within DOUBLE_TAP_WINDOW dashes beside the opponent
   if (e.code === 'KeyA' && !gameOver && !e.repeat) {
     const now = performance.now() / 1000
@@ -630,12 +636,208 @@ window.addEventListener('keydown', e => {
   }
 })
 
+// ---------------------------------------------------------------------------
+// Title screen + Exploration mode
+// ---------------------------------------------------------------------------
+
+const titleScreen = document.createElement('div')
+titleScreen.style.cssText = "position:fixed;inset:0;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10000;font-family:Arial;"
+const titleHeading = document.createElement('div')
+titleHeading.textContent = 'IRON DRAGON'
+titleHeading.style.cssText = "color:#ffd700;font-size:84px;font-weight:bold;text-shadow:0 0 30px #ffd700;letter-spacing:6px;margin-bottom:48px;"
+titleScreen.appendChild(titleHeading)
+const titleButtons = document.createElement('div')
+titleButtons.style.cssText = "display:flex;gap:32px;"
+titleScreen.appendChild(titleButtons)
+function makeMenuButton(label) {
+  const b = document.createElement('button')
+  b.textContent = label
+  b.style.cssText = "padding:18px 36px;font-size:22px;font-weight:bold;font-family:Arial;color:#ffd700;background:#1a0a2e;border:2px solid #ffd700;border-radius:8px;cursor:pointer;"
+  return b
+}
+const fightBtn = makeMenuButton('FIGHT MODE')
+const exploreBtn = makeMenuButton('EXPLORE MODE')
+titleButtons.appendChild(fightBtn)
+titleButtons.appendChild(exploreBtn)
+document.body.appendChild(titleScreen)
+
+// Exploration HUD elements
+const explorePrompt = document.createElement('div')
+explorePrompt.style.cssText = "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);color:#ffd700;font-family:Arial;font-size:22px;font-weight:bold;z-index:999;display:none;text-shadow:0 0 12px #ffd700;pointer-events:none;"
+explorePrompt.textContent = 'Press E to pick up'
+document.body.appendChild(explorePrompt)
+
+const exploreMsg = document.createElement('div')
+exploreMsg.style.cssText = "position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);color:#ffd700;font-family:Arial;font-size:38px;font-weight:bold;z-index:999;display:none;text-shadow:0 0 20px #ffd700;pointer-events:none;text-align:center;white-space:pre;"
+document.body.appendChild(exploreMsg)
+
+const exploreControls = document.createElement('div')
+exploreControls.style.cssText = "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);color:#888;font-family:Arial;font-size:14px;z-index:999;display:none;text-align:center;"
+exploreControls.innerHTML = "W = Walk Forward &nbsp;|&nbsp; S = Walk Back &nbsp;|&nbsp; E = Pick Up"
+document.body.appendChild(exploreControls)
+
+// Exploration scene + state
+const exploreGroup = new THREE.Group()
+let exploreBuilt = false
+const pickups = []
+const PICKUP_NAMES = ['JADE AMULET', 'ANCIENT SCROLL', 'CHI CRYSTAL']
+const PICKUP_RANGE = 2.5
+const EXPLORE_SPEED = 0.12
+const EXPLORE_Z_MIN = -46
+const EXPLORE_Z_MAX = 4
+let pickupsCollected = 0
+let exploreMsgTimer = 0
+
+function buildExploreScene() {
+  if (exploreBuilt) return
+  exploreBuilt = true
+  const corridorFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(8, 60),
+    new THREE.MeshStandardMaterial({ color: 0x120a1e })
+  )
+  corridorFloor.rotation.x = -Math.PI / 2
+  corridorFloor.position.set(0, 0, -22)
+  corridorFloor.receiveShadow = true
+  exploreGroup.add(corridorFloor)
+
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x0d0820 })
+  const leftCorridorWall = new THREE.Mesh(new THREE.PlaneGeometry(60, 8), wallMat)
+  leftCorridorWall.position.set(-4, 4, -22)
+  leftCorridorWall.rotation.y = Math.PI / 2
+  exploreGroup.add(leftCorridorWall)
+  const rightCorridorWall = new THREE.Mesh(new THREE.PlaneGeometry(60, 8), wallMat)
+  rightCorridorWall.position.set(4, 4, -22)
+  rightCorridorWall.rotation.y = -Math.PI / 2
+  exploreGroup.add(rightCorridorWall)
+  const corridorCeiling = new THREE.Mesh(new THREE.PlaneGeometry(8, 60), wallMat)
+  corridorCeiling.position.set(0, 8, -22)
+  corridorCeiling.rotation.x = Math.PI / 2
+  exploreGroup.add(corridorCeiling)
+
+  // Soft lamps spaced down the corridor
+  for (const lampZ of [-2, -16, -30, -44]) {
+    const lamp = new THREE.PointLight(0xffd700, 1.2, 20)
+    lamp.position.set(0, 6, lampZ)
+    exploreGroup.add(lamp)
+  }
+
+  // 3 glowing gold pickups on the floor
+  const pickupZs = [-10, -25, -40]
+  pickupZs.forEach((pz, i) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 0.6, 0.6),
+      new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffaa00, emissiveIntensity: 0.8 })
+    )
+    mesh.position.set(0, 0.5, pz)
+    exploreGroup.add(mesh)
+    const glow = new THREE.PointLight(0xffd700, 1.5, 5)
+    glow.position.set(0, 0.6, pz)
+    exploreGroup.add(glow)
+    pickups.push({ mesh, glow, name: PICKUP_NAMES[i], collected: false })
+  })
+
+  scene.add(exploreGroup)
+}
+
+function startFightMode() {
+  if (audioCtx.state === 'suspended') audioCtx.resume()
+  gameMode = 'fight'
+  onTitle = false
+  titleScreen.style.display = 'none'
+}
+
+function startExploreMode() {
+  if (audioCtx.state === 'suspended') audioCtx.resume()
+  gameMode = 'explore'
+  onTitle = false
+  titleScreen.style.display = 'none'
+  // Hide the fight HUD
+  hud.style.display = 'none'
+  controls.style.display = 'none'
+  // Hide every fight-scene mesh (arena + Vampire Lieutenant), keeping Iron Dragon
+  scene.traverse(obj => {
+    if (obj.isMesh && obj !== ironDragon) obj.visible = false
+  })
+  buildExploreScene()
+  exploreGroup.visible = true
+  // Drop Iron Dragon at the corridor entrance, facing down the hall
+  ironDragon.position.set(0, 1, EXPLORE_Z_MAX - 2)
+  ironDragon.rotation.set(0, 0, 0)
+  ironDragon.material.color.setHex(0x00ff88)
+  exploreControls.style.display = 'block'
+}
+
+fightBtn.addEventListener('click', startFightMode)
+exploreBtn.addEventListener('click', startExploreMode)
+
+// E to collect a nearby pickup while exploring
+window.addEventListener('keydown', e => {
+  if (onTitle || gameMode !== 'explore' || e.code !== 'KeyE') return
+  for (const p of pickups) {
+    if (p.collected) continue
+    const near = Math.abs(ironDragon.position.z - p.mesh.position.z) < PICKUP_RANGE &&
+      Math.abs(ironDragon.position.x - p.mesh.position.x) < PICKUP_RANGE
+    if (near) {
+      p.collected = true
+      p.mesh.visible = false
+      p.glow.visible = false
+      pickupsCollected += 1
+      exploreMsg.textContent = 'PICKED UP\n' + p.name + '  (' + pickupsCollected + '/3)'
+      exploreMsg.style.display = 'block'
+      exploreMsgTimer = 1.8
+      playChiChargeSound()
+      break
+    }
+  }
+})
+
+function updateExplore(delta) {
+  // Walk forward / backward along the corridor
+  if (keys['KeyW']) ironDragon.position.z -= EXPLORE_SPEED
+  if (keys['KeyS']) ironDragon.position.z += EXPLORE_SPEED
+  ironDragon.position.z = Math.max(EXPLORE_Z_MIN, Math.min(EXPLORE_Z_MAX, ironDragon.position.z))
+
+  // Third-person camera trailing behind Iron Dragon
+  camera.position.set(ironDragon.position.x, ironDragon.position.y + 3, ironDragon.position.z + 6)
+  camera.lookAt(ironDragon.position.x, ironDragon.position.y, ironDragon.position.z - 4)
+
+  // Spin the pickups and show the prompt when standing near an uncollected one
+  let nearAny = false
+  for (const p of pickups) {
+    if (p.collected) continue
+    p.mesh.rotation.y += delta * 2
+    if (Math.abs(ironDragon.position.z - p.mesh.position.z) < PICKUP_RANGE &&
+        Math.abs(ironDragon.position.x - p.mesh.position.x) < PICKUP_RANGE) {
+      nearAny = true
+    }
+  }
+  explorePrompt.style.display = nearAny ? 'block' : 'none'
+
+  if (exploreMsgTimer > 0) {
+    exploreMsgTimer -= delta
+    if (exploreMsgTimer <= 0) exploreMsg.style.display = 'none'
+  }
+}
+
 let lastTime = 0
 
 function animate(timestamp) {
   requestAnimationFrame(animate)
   const delta = (timestamp - lastTime) / 1000
   lastTime = timestamp
+
+  // Title screen: pause everything until a mode is chosen
+  if (onTitle) {
+    renderer.render(scene, camera)
+    return
+  }
+
+  // Exploration mode runs its own update loop, independent of the fight
+  if (gameMode === 'explore') {
+    updateExplore(delta)
+    renderer.render(scene, camera)
+    return
+  }
 
   if (gameOver) {
     renderer.render(scene, camera)
