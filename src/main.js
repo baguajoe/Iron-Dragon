@@ -57,6 +57,14 @@ let opponentFlashTimer = 0
 let attackHit = false
 let gameOver = false
 
+// Best of 3 rounds: first to ROUNDS_TO_WIN takes the match
+const roundsWon = { ironDragon: 0, opponent: 0 }
+const ROUNDS_TO_WIN = 2
+let currentRound = 1
+let roundTransition = false
+let roundTransitionTimer = 0
+const ROUND_TRANSITION_DURATION = 2
+
 let opponentAttackTimer = 0
 const OPPONENT_ATTACK_INTERVAL = 2
 const OPPONENT_ATTACK_RANGE = 2.5
@@ -172,6 +180,7 @@ hud.innerHTML = `
     </div>
     <div style="color:white;font-size:18px;font-weight:bold;text-align:center;padding-top:4px;">
       <div id="roundtext">ROUND 1</div>
+      <div id="roundscore" style="font-size:22px;margin-top:4px;">0-0</div>
     </div>
     <div style="width:35%;text-align:right;">
       <div style="color:#ff2200;font-weight:bold;font-size:13px;margin-bottom:4px;">OPPONENT</div>
@@ -186,10 +195,15 @@ const p1Fill = document.getElementById('p1fill')
 const p2Fill = document.getElementById('p2fill')
 const chiFill = document.getElementById('chifill')
 const roundText = document.getElementById('roundtext')
+const roundScore = document.getElementById('roundscore')
 
 const winScreen = document.createElement('div')
 winScreen.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#00ff88;font-family:Arial;font-size:52px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #00ff88;text-align:center;"
 document.body.appendChild(winScreen)
+
+const roundMsg = document.createElement('div')
+roundMsg.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#00ff88;font-family:Arial;font-size:48px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #00ff88;text-align:center;pointer-events:none;"
+document.body.appendChild(roundMsg)
 
 const redirectText = document.createElement('div')
 redirectText.style.cssText = "position:fixed;top:35%;left:50%;transform:translate(-50%,-50%);color:#3399ff;font-family:Arial;font-size:48px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #3399ff;pointer-events:none;"
@@ -383,7 +397,61 @@ function updateChiBar() {
   chiFill.style.width = Math.max(0, Math.min(CHI_MAX, chi)) + '%'
 }
 
-function showWinner(text) {
+function updateRoundScore() {
+  roundScore.textContent = roundsWon.ironDragon + '-' + roundsWon.opponent
+}
+
+// Reset health, Chi, positions, and all transient combat state for a fresh round
+function resetRoundState() {
+  ironDragonHealth = 100
+  opponentHealth = 100
+  chi = 0
+  ironDragonAttacking = false
+  attackTimer = 0
+  attackHit = false
+  hitstopTimer = 0
+  opponentAttackTimer = 0
+  ironDragonFlashTimer = 0
+  roundTimer = 0
+  if (dragonPulse) {
+    scene.remove(dragonPulse)
+    dragonPulse = null
+  }
+  opponentFallTimer = 0
+  opponent.rotation.z = 0
+  redirectWindow = 0
+  redirectTextTimer = 0
+  redirectText.style.display = 'none'
+  wardOffTimer = 0
+  wardOffTextTimer = 0
+  wardOffText.style.display = 'none'
+  pushCooldown = 0
+  rollbackTextTimer = 0
+  rollbackText.style.display = 'none'
+  pressCooldown = 0
+  pressTextTimer = 0
+  pressText.style.display = 'none'
+  baguaBuffTimer = 0
+  baguaDashing = false
+  lastTapTimeA = -Infinity
+  lastTapTimeD = -Infinity
+  ironShirtActive = false
+  ironShirtTimer = 0
+  ironShirtText.style.display = 'none'
+  idleTimer = 0
+  isHealing = false
+  qigongPulsing = false
+  healingText.style.display = 'none'
+  ironDragon.position.set(-2, 1, 0)
+  opponent.position.set(2, 1, 0)
+  ironDragon.material.color.setHex(0x00ff88)
+  opponent.material.color.setHex(0xff2200)
+  updateHealthBars()
+  updateChiBar()
+}
+
+// Show the final victory screen for the match winner
+function showFinalWinner(text) {
   gameOver = true
   const color = text.startsWith('VAMPIRE LORD') ? '#ff2200' : '#00ff88'
   winScreen.style.color = color
@@ -392,52 +460,48 @@ function showWinner(text) {
   winScreen.innerHTML = text + '<br><span style="font-size:18px;color:white;">Press R to restart</span>'
 }
 
+// A character's health hit zero: award the round, then end the match or transition to the next round
+function showWinner(text) {
+  if (gameOver || roundTransition) return
+  const winner = text.startsWith('VAMPIRE LORD') ? 'opponent' : 'ironDragon'
+  roundsWon[winner] += 1
+  updateRoundScore()
+  if (roundsWon[winner] >= ROUNDS_TO_WIN) {
+    showFinalWinner(winner === 'opponent' ? 'VAMPIRE LORD WINS' : 'IRON DRAGON WINS!')
+    return
+  }
+  // Round won but match continues: announce and pause before the next round
+  roundTransition = true
+  roundTransitionTimer = ROUND_TRANSITION_DURATION
+  const color = winner === 'opponent' ? '#ff2200' : '#00ff88'
+  roundMsg.textContent = 'ROUND ' + currentRound + ' COMPLETE'
+  roundMsg.style.color = color
+  roundMsg.style.textShadow = '0 0 20px ' + color
+  roundMsg.style.display = 'block'
+}
+
+// Advance to and set up the next round after the transition pause
+function startNextRound() {
+  currentRound += 1
+  roundTransition = false
+  roundMsg.style.display = 'none'
+  roundText.textContent = 'ROUND ' + currentRound
+  resetRoundState()
+}
+
 window.addEventListener('keydown', e => {
   if (e.code === 'KeyR' && gameOver) {
-    ironDragonHealth = 100
-    opponentHealth = 100
     gameOver = false
-    opponentAttackTimer = 0
-    ironDragonFlashTimer = 0
-    roundTimer = 0
-    chi = 0
-    if (dragonPulse) {
-      scene.remove(dragonPulse)
-      dragonPulse = null
-    }
-    opponentFallTimer = 0
-    opponent.rotation.z = 0
-    redirectWindow = 0
-    redirectTextTimer = 0
-    redirectText.style.display = 'none'
-    wardOffTimer = 0
-    wardOffTextTimer = 0
-    wardOffText.style.display = 'none'
-    pushCooldown = 0
-    rollbackTextTimer = 0
-    rollbackText.style.display = 'none'
-    pressCooldown = 0
-    pressTextTimer = 0
-    pressText.style.display = 'none'
-    baguaBuffTimer = 0
-    baguaDashing = false
-    lastTapTimeA = -Infinity
-    lastTapTimeD = -Infinity
-    ironShirtActive = false
-    ironShirtTimer = 0
-    ironShirtText.style.display = 'none'
-    idleTimer = 0
-    isHealing = false
-    qigongPulsing = false
-    healingText.style.display = 'none'
+    roundsWon.ironDragon = 0
+    roundsWon.opponent = 0
+    currentRound = 1
+    roundTransition = false
+    roundTransitionTimer = 0
+    roundMsg.style.display = 'none'
+    updateRoundScore()
     winScreen.style.display = 'none'
     roundText.textContent = 'ROUND 1'
-    ironDragon.position.set(-2, 1, 0)
-    opponent.position.set(2, 1, 0)
-    ironDragon.material.color.setHex(0x00ff88)
-    opponent.material.color.setHex(0xff2200)
-    updateHealthBars()
-    updateChiBar()
+    resetRoundState()
   }
 })
 
@@ -449,6 +513,16 @@ function animate(timestamp) {
   lastTime = timestamp
 
   if (gameOver) {
+    renderer.render(scene, camera)
+    return
+  }
+
+  // Between rounds: hold the ROUND X COMPLETE message, then start the next round
+  if (roundTransition) {
+    roundTransitionTimer -= delta
+    if (roundTransitionTimer <= 0) {
+      startNextRound()
+    }
     renderer.render(scene, camera)
     return
   }
