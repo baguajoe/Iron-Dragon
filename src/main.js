@@ -78,7 +78,7 @@ const PULSE_DAMAGE = 35
 const PULSE_HIT_RANGE = 1.2
 let dragonPulse = null
 let pulseDirection = 1
-let pulseTravelTimer = 0
+let pulseStartX = 0
 
 const J_DAMAGE = 15
 // Knockdown: only the Dragon Pulse knocks the opponent down
@@ -159,8 +159,8 @@ window.addEventListener('keydown', e => {
       new THREE.MeshBasicMaterial({ color: 0xffff00 })
     )
     pulseDirection = opponent.position.x > ironDragon.position.x ? 1 : -1
-    pulseTravelTimer = 0.5
-    dragonPulse.position.set(ironDragon.position.x + 1.5 * pulseDirection, 1, 0)
+    pulseStartX = ironDragon.position.x + 1.5 * pulseDirection
+    dragonPulse.position.set(pulseStartX, 1, 0)
     scene.add(dragonPulse)
     console.log('Dragon Pulse created at x:', dragonPulse.position.x)
     // Drop out of full-power white once Chi falls below max (unless mid-attack/flash)
@@ -229,9 +229,8 @@ function animate(timestamp) {
   // Dragon Pulse: update BEFORE the hitstop check so it keeps moving during hitstop
   if (dragonPulse) {
     dragonPulse.position.x += PULSE_SPEED * pulseDirection
-    pulseTravelTimer -= delta
     console.log('Dragon Pulse x:', dragonPulse.position.x.toFixed(3))
-    if (pulseTravelTimer <= 0 && Math.abs(dragonPulse.position.x - opponent.position.x) < PULSE_HIT_RANGE) {
+    if (Math.abs(dragonPulse.position.x - pulseStartX) > 1.5 && Math.abs(dragonPulse.position.x - opponent.position.x) < PULSE_HIT_RANGE) {
       console.log('Dragon Pulse hit opponent at x:', dragonPulse.position.x.toFixed(3))
       scene.remove(dragonPulse)
       dragonPulse = null
