@@ -2,7 +2,7 @@ import * as THREE from 'three'
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x050015)
-scene.fog = new THREE.FogExp2(0x050015, 0.04)
+scene.fog = new THREE.FogExp2(0x050015, 0.02)
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
 camera.position.set(0, 2, 8)
@@ -20,7 +20,7 @@ floor.rotation.x = -Math.PI / 2
 floor.receiveShadow = true
 scene.add(floor)
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.4))
+scene.add(new THREE.AmbientLight(0xffffff, 0.6))
 const sun = new THREE.DirectionalLight(0xffffff, 1.2)
 sun.position.set(5, 10, 5)
 sun.castShadow = true
@@ -31,6 +31,61 @@ for (const torchX of [-6, -2, 2, 6]) {
   const torch = new THREE.PointLight(0xff6600, 2, 8)
   torch.position.set(torchX, 3, -2)
   scene.add(torch)
+}
+
+// Arena room: walls, ceiling, pillars, and portrait frames
+const backWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(20, 12),
+  new THREE.MeshStandardMaterial({ color: 0x0d0820 })
+)
+backWall.position.set(0, 5, -4)
+backWall.receiveShadow = true
+scene.add(backWall)
+
+const leftWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(10, 10),
+  new THREE.MeshStandardMaterial({ color: 0x0d0820 })
+)
+leftWall.position.set(-8, 5, 0)
+leftWall.rotation.y = Math.PI / 2
+leftWall.receiveShadow = true
+scene.add(leftWall)
+
+const rightWall = new THREE.Mesh(
+  new THREE.PlaneGeometry(10, 10),
+  new THREE.MeshStandardMaterial({ color: 0x0d0820 })
+)
+rightWall.position.set(8, 5, 0)
+rightWall.rotation.y = -Math.PI / 2
+rightWall.receiveShadow = true
+scene.add(rightWall)
+
+const ceiling = new THREE.Mesh(
+  new THREE.PlaneGeometry(20, 10),
+  new THREE.MeshStandardMaterial({ color: 0x080010 })
+)
+ceiling.position.set(0, 10, 0)
+ceiling.rotation.x = Math.PI / 2
+scene.add(ceiling)
+
+for (const pillarX of [-6, -3, 3, 6]) {
+  const pillar = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8, 3, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x1a1030 })
+  )
+  pillar.position.set(pillarX, 1.5, -2)
+  pillar.castShadow = true
+  pillar.receiveShadow = true
+  scene.add(pillar)
+}
+
+for (const frameX of [-4, 0, 4]) {
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 2, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x2a1040 })
+  )
+  frame.position.set(frameX, 5, -3.9)
+  scene.add(frame)
 }
 
 const ironDragon = new THREE.Mesh(
