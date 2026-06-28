@@ -42,7 +42,7 @@ opponent.castShadow = true
 scene.add(opponent)
 
 const keys = {}
-window.addEventListener('keydown', e => { keys[e.code] = true })
+window.addEventListener('keydown', e => { keys[e.code] = true; idleTimer = 0 })
 window.addEventListener('keyup', e => { keys[e.code] = false })
 
 let ironDragonHealth = 100
@@ -63,15 +63,31 @@ const OPPONENT_ATTACK_RANGE = 2.5
 const OPPONENT_DAMAGE = 10
 const OPPONENT_SPEED = 0.02
 const AI_MIN_DISTANCE = 2
+let redirectWindow = 0
+let lastDamageTaken = 0
+const REDIRECT_WINDOW_DURATION = 0.5
+const REDIRECT_DAMAGE = 20
 let ironDragonFlashTimer = 0
 let roundTimer = 0
 const AI_START_DELAY = 2
+
+// Iron Qigong: stand still for QIGONG_DELAY seconds to slowly regenerate health
+let idleTimer = 0
+let isHealing = false
+let qigongPulsing = false
+const QIGONG_DELAY = 0.5
+const QIGONG_HEAL_RATE = 8
 
 let chi = 0
 const CHI_MAX = 100
 const CHI_PER_HIT = 12
 const CHI_PULSE_THRESHOLD = 50
 const CHI_PULSE_COST = 50
+let ironShirtActive = false
+let ironShirtTimer = 0
+const IRON_SHIRT_COST = 40
+const IRON_SHIRT_DURATION = 3
+const IRON_SHIRT_COLOR = 0x444444
 const PULSE_SPEED = 0.15
 const PULSE_REMOVE_X = 10
 const PULSE_DAMAGE = 35
@@ -81,6 +97,14 @@ let pulseDirection = 1
 let pulseStartX = 0
 
 const J_DAMAGE = 15
+// Bagua circle stepping: double-tap A/D to dash beside the opponent into an advantageous stance
+let baguaBuffTimer = 0
+let lastTapTimeA = -Infinity
+let lastTapTimeD = -Infinity
+const DOUBLE_TAP_WINDOW = 0.3
+const BAGUA_BUFF_DURATION = 1
+const BAGUA_DAMAGE_MULT = 1.5
+const BAGUA_STEP_OFFSET = 2
 // Knockdown: only the Dragon Pulse knocks the opponent down
 const FALL_ROTATION = 1.5
 const FALL_KNOCKBACK = 2
@@ -94,9 +118,21 @@ function knockDownOpponent() {
   opponentFallTimer = FALL_DURATION
 }
 
-// Iron Dragon glows white at full Chi; otherwise its normal green.
+// Iron Dragon glows orange during the Bagua advantage, white at full Chi, otherwise its normal green.
 function ironDragonBaseColor() {
+  if (ironShirtActive) return IRON_SHIRT_COLOR
+  if (baguaBuffTimer > 0) return 0xff8800
   return chi >= CHI_MAX ? 0xffffff : 0x00ff88
+}
+
+// Dash to the side of the opponent and enter the advantageous Bagua stance (side: -1 left, +1 right)
+function baguaStep(side) {
+  ironDragon.position.x = opponent.position.x + side * BAGUA_STEP_OFFSET
+  ironDragon.position.x = Math.max(-7, Math.min(7, ironDragon.position.x))
+  baguaBuffTimer = BAGUA_BUFF_DURATION
+  if (!ironDragonAttacking) {
+    ironDragon.material.color.setHex(0xff8800)
+  }
 }
 
 const hud = document.createElement('div')
@@ -136,12 +172,47 @@ const winScreen = document.createElement('div')
 winScreen.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#00ff88;font-family:Arial;font-size:52px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #00ff88;text-align:center;"
 document.body.appendChild(winScreen)
 
+const redirectText = document.createElement('div')
+redirectText.style.cssText = "position:fixed;top:35%;left:50%;transform:translate(-50%,-50%);color:#3399ff;font-family:Arial;font-size:48px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #3399ff;pointer-events:none;"
+redirectText.textContent = 'REDIRECTED'
+document.body.appendChild(redirectText)
+
+const ironShirtText = document.createElement('div')
+ironShirtText.style.cssText = "position:fixed;top:25%;left:50%;transform:translate(-50%,-50%);color:#aaaaaa;font-family:Arial;font-size:48px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #888888;pointer-events:none;"
+ironShirtText.textContent = 'IRON SHIRT'
+document.body.appendChild(ironShirtText)
+
+const healingText = document.createElement('div')
+healingText.style.cssText = "position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);color:#00ff88;font-family:Arial;font-size:40px;font-weight:bold;z-index:9999;display:none;text-shadow:0 0 20px #00ff88;pointer-events:none;"
+healingText.textContent = 'HEALING'
+document.body.appendChild(healingText)
+let redirectTextTimer = 0
+
 const controls = document.createElement('div')
 controls.style.cssText = "position:fixed;bottom:16px;left:50%;transform:translateX(-50%);color:#666;font-family:Arial;font-size:12px;z-index:999;text-align:center;"
-controls.innerHTML = "A/D = Move Iron Dragon &nbsp;|&nbsp; Arrow Keys = Move Opponent &nbsp;|&nbsp; J = Attack &nbsp;|&nbsp; K = Dragon Pulse (50 Chi)"
+controls.innerHTML = "A/D = Move Iron Dragon &nbsp;|&nbsp; Arrow Keys = Move Opponent &nbsp;|&nbsp; J = Attack &nbsp;|&nbsp; K = Dragon Pulse (50 Chi) &nbsp;|&nbsp; L = Tai Chi Redirect &nbsp;|&nbsp; AA/DD = Bagua Step &nbsp;|&nbsp; I = Iron Shirt (40 Chi)"
 document.body.appendChild(controls)
 
 window.addEventListener('keydown', e => {
+  // Bagua circle stepping: a second A/D tap within DOUBLE_TAP_WINDOW dashes beside the opponent
+  if (e.code === 'KeyA' && !gameOver && !e.repeat) {
+    const now = performance.now() / 1000
+    if (now - lastTapTimeA < DOUBLE_TAP_WINDOW) {
+      baguaStep(-1)
+      lastTapTimeA = -Infinity
+    } else {
+      lastTapTimeA = now
+    }
+  }
+  if (e.code === 'KeyD' && !gameOver && !e.repeat) {
+    const now = performance.now() / 1000
+    if (now - lastTapTimeD < DOUBLE_TAP_WINDOW) {
+      baguaStep(1)
+      lastTapTimeD = -Infinity
+    } else {
+      lastTapTimeD = now
+    }
+  }
   if (e.code === 'KeyJ' && !ironDragonAttacking && !gameOver) {
     ironDragonAttacking = true
     attackTimer = 0
@@ -165,6 +236,39 @@ window.addEventListener('keydown', e => {
     console.log('Dragon Pulse created at x:', dragonPulse.position.x)
     // Drop out of full-power white once Chi falls below max (unless mid-attack/flash)
     if (!ironDragonAttacking && ironDragonFlashTimer <= 0) {
+      ironDragon.material.color.setHex(ironDragonBaseColor())
+    }
+  }
+  // Tai Chi redirect: press L within the window after being hit to reverse the attack
+  if (e.code === 'KeyL' && !gameOver && redirectWindow > 0) {
+    redirectWindow = 0
+    // Cancel and restore the damage Iron Dragon just took
+    ironDragonHealth = Math.min(100, ironDragonHealth + lastDamageTaken)
+    // Knock the opponent back 2 units, away from Iron Dragon, using their own force
+    const redirectDir = opponent.position.x > ironDragon.position.x ? 1 : -1
+    opponent.position.x += redirectDir * 2
+    opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
+    opponentHealth = Math.max(0, opponentHealth - REDIRECT_DAMAGE)
+    updateHealthBars()
+    // Flash Iron Dragon blue to show the redirect activated
+    ironDragon.material.color.setHex(0x3399ff)
+    ironDragonFlashTimer = 0.3
+    // Show REDIRECTED text briefly
+    redirectText.style.display = 'block'
+    redirectTextTimer = 0.8
+    if (opponentHealth <= 0) {
+      showWinner('IRON DRAGON WINS!')
+    }
+  }
+  // Iron Shirt: spend Chi to become invulnerable for a few seconds
+  if (e.code === 'KeyI' && !gameOver && !ironShirtActive && chi >= IRON_SHIRT_COST) {
+    chi -= IRON_SHIRT_COST
+    updateChiBar()
+    ironShirtActive = true
+    ironShirtTimer = IRON_SHIRT_DURATION
+    ironShirtText.style.display = 'block'
+    // Shift to dark grey metallic immediately unless mid-attack
+    if (!ironDragonAttacking) {
       ironDragon.material.color.setHex(ironDragonBaseColor())
     }
   }
@@ -203,6 +307,19 @@ window.addEventListener('keydown', e => {
     }
     opponentFallTimer = 0
     opponent.rotation.z = 0
+    redirectWindow = 0
+    redirectTextTimer = 0
+    redirectText.style.display = 'none'
+    baguaBuffTimer = 0
+    lastTapTimeA = -Infinity
+    lastTapTimeD = -Infinity
+    ironShirtActive = false
+    ironShirtTimer = 0
+    ironShirtText.style.display = 'none'
+    idleTimer = 0
+    isHealing = false
+    qigongPulsing = false
+    healingText.style.display = 'none'
     winScreen.style.display = 'none'
     roundText.textContent = 'ROUND 1'
     ironDragon.position.set(-2, 1, 0)
@@ -269,7 +386,8 @@ function animate(timestamp) {
       const distance = Math.abs(ironDragon.position.x - opponent.position.x)
       if (distance < ATTACK_RANGE) {
         attackHit = true
-        opponentHealth = Math.max(0, opponentHealth - J_DAMAGE)
+        const attackDamage = baguaBuffTimer > 0 ? J_DAMAGE * BAGUA_DAMAGE_MULT : J_DAMAGE
+        opponentHealth = Math.max(0, opponentHealth - attackDamage)
         updateHealthBars()
         chi = Math.min(CHI_MAX, chi + CHI_PER_HIT)
         updateChiBar()
@@ -308,8 +426,15 @@ function animate(timestamp) {
   opponentAttackTimer += delta
   if (aiActive && opponentAttackTimer >= OPPONENT_ATTACK_INTERVAL && aiDistance < OPPONENT_ATTACK_RANGE) {
     opponentAttackTimer = 0
-    ironDragonHealth = Math.max(0, ironDragonHealth - OPPONENT_DAMAGE)
-    updateHealthBars()
+    // An incoming attack breaks meditation and stops healing
+    idleTimer = 0
+    // Iron Shirt absorbs the hit completely: no damage, no knockback
+    if (!ironShirtActive) {
+      ironDragonHealth = Math.max(0, ironDragonHealth - OPPONENT_DAMAGE)
+      lastDamageTaken = OPPONENT_DAMAGE
+      redirectWindow = REDIRECT_WINDOW_DURATION
+      updateHealthBars()
+    }
     hitstopTimer = HITSTOP_DURATION
 
     // Flash orange when attacking
@@ -317,11 +442,13 @@ function animate(timestamp) {
     opponentFlashTimer = 0.15
 
     // Knock Iron Dragon back, flash it, shake camera
-    const knockDir = ironDragon.position.x < opponent.position.x ? -1 : 1
-    ironDragon.position.x += knockDir * 0.5
-    ironDragon.position.x = Math.max(-7, Math.min(7, ironDragon.position.x))
-    ironDragon.material.color.setHex(0xffffff)
-    ironDragonFlashTimer = 0.1
+    if (!ironShirtActive) {
+      const knockDir = ironDragon.position.x < opponent.position.x ? -1 : 1
+      ironDragon.position.x += knockDir * 0.5
+      ironDragon.position.x = Math.max(-7, Math.min(7, ironDragon.position.x))
+      ironDragon.material.color.setHex(0xffffff)
+      ironDragonFlashTimer = 0.1
+    }
     camera.position.x += (Math.random() - 0.5) * 0.3
     camera.position.y += (Math.random() - 0.5) * 0.3
 
@@ -332,6 +459,37 @@ function animate(timestamp) {
 
   camera.position.x += (0 - camera.position.x) * 0.2
   camera.position.y += (2 - camera.position.y) * 0.2
+
+  if (redirectWindow > 0) {
+    redirectWindow -= delta
+  }
+
+  if (redirectTextTimer > 0) {
+    redirectTextTimer -= delta
+    if (redirectTextTimer <= 0) {
+      redirectText.style.display = 'none'
+    }
+  }
+
+  if (ironShirtActive) {
+    ironShirtTimer -= delta
+    if (ironShirtTimer <= 0) {
+      ironShirtActive = false
+      ironShirtText.style.display = 'none'
+      // Drop the grey metallic look back to the resting color
+      if (!ironDragonAttacking && ironDragonFlashTimer <= 0) {
+        ironDragon.material.color.setHex(ironDragonBaseColor())
+      }
+    }
+  }
+
+  if (baguaBuffTimer > 0) {
+    baguaBuffTimer -= delta
+    // Once the advantage ends, drop the orange glow back to the resting color
+    if (baguaBuffTimer <= 0 && !ironDragonAttacking && ironDragonFlashTimer <= 0) {
+      ironDragon.material.color.setHex(ironDragonBaseColor())
+    }
+  }
 
   if (ironDragonFlashTimer > 0) {
     ironDragonFlashTimer -= delta
@@ -355,6 +513,30 @@ function animate(timestamp) {
     }
   }
 
+  // Iron Qigong meditation: heal after standing idle, stopping instantly on input or attack
+  const anyKeyDown = Object.values(keys).some(Boolean)
+  if (anyKeyDown || gameOver) {
+    idleTimer = 0
+  } else {
+    idleTimer += delta
+  }
+  isHealing = !gameOver && idleTimer >= QIGONG_DELAY
+  if (isHealing && ironDragonHealth < 100) {
+    ironDragonHealth = Math.min(100, ironDragonHealth + QIGONG_HEAL_RATE * delta)
+    updateHealthBars()
+  }
+  // Show HEALING while actively regenerating health
+  healingText.style.display = isHealing && ironDragonHealth < 100 ? 'block' : 'none'
+  // Subtle white pulse while meditating (skip if another state already owns the color)
+  const canPulse = isHealing && !ironDragonAttacking && ironDragonFlashTimer <= 0 && !ironShirtActive && baguaBuffTimer <= 0
+  if (canPulse) {
+    const pulse = (Math.sin(timestamp / 200) + 1) / 2
+    ironDragon.material.color.copy(new THREE.Color(ironDragonBaseColor())).lerp(new THREE.Color(0xffffff), pulse * 0.4)
+    qigongPulsing = true
+  } else if (qigongPulsing) {
+    qigongPulsing = false
+    ironDragon.material.color.setHex(ironDragonBaseColor())
+  }
 
   renderer.render(scene, camera)
 }
