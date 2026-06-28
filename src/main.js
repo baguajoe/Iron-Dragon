@@ -58,11 +58,11 @@ let attackHit = false
 let gameOver = false
 
 let opponentAttackTimer = 0
-const OPPONENT_ATTACK_INTERVAL = 3
+const OPPONENT_ATTACK_INTERVAL = 2
 const OPPONENT_ATTACK_RANGE = 2.5
 const OPPONENT_DAMAGE = 10
 const OPPONENT_SPEED = 0.02
-const AI_MIN_DISTANCE = 3
+const AI_MIN_DISTANCE = 2
 let ironDragonFlashTimer = 0
 let roundTimer = 0
 const AI_START_DELAY = 2
@@ -298,6 +298,10 @@ function animate(timestamp) {
   if (aiActive && aiDistance > AI_MIN_DISTANCE) {
     const aiDirection = ironDragon.position.x < opponent.position.x ? -1 : 1
     opponent.position.x += aiDirection * OPPONENT_SPEED
+    opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
+  }
+  if (aiActive) {
+    opponent.position.x += Math.random() * 0.01 - 0.005
     opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
   }
 
