@@ -164,6 +164,9 @@ const OPPONENT_ATTACK_RANGE = 2.5
 const OPPONENT_DAMAGE = 10
 const OPPONENT_SPEED = 0.02
 const AI_MIN_DISTANCE = 2
+// Vampire speed: the Lieutenant blinks 1 unit closer every few seconds with a red flash
+let vampireTeleportTimer = 0
+const VAMPIRE_TELEPORT_INTERVAL = 5
 let redirectWindow = 0
 let lastDamageTaken = 0
 const REDIRECT_WINDOW_DURATION = 0.5
@@ -295,7 +298,7 @@ hud.innerHTML = `
       <div id="roundscore" style="font-size:22px;margin-top:4px;">0-0</div>
     </div>
     <div style="width:35%;text-align:right;">
-      <div style="color:#ff2200;font-weight:bold;font-size:13px;margin-bottom:4px;">OPPONENT</div>
+      <div style="color:#ff2200;font-weight:bold;font-size:13px;margin-bottom:4px;">VAMPIRE LIEUTENANT</div>
       <div style="background:#333;border:2px solid #ff2200;height:22px;border-radius:3px;overflow:hidden;display:flex;justify-content:flex-end;">
         <div id="p2fill" style="width:100%;height:100%;background:#ff2200;transition:width 0.15s;"></div>
       </div>
@@ -534,6 +537,7 @@ function resetRoundState() {
   opponentAttackTimer = 0
   ironDragonFlashTimer = 0
   roundTimer = 0
+  vampireTeleportTimer = 0
   if (dragonPulse) {
     scene.remove(dragonPulse)
     dragonPulse = null
@@ -574,7 +578,7 @@ function resetRoundState() {
 // Show the final victory screen for the match winner
 function showFinalWinner(text) {
   gameOver = true
-  const color = text.startsWith('VAMPIRE LORD') ? '#ff2200' : '#00ff88'
+  const color = text.startsWith('VAMPIRE') ? '#ff2200' : '#00ff88'
   winScreen.style.color = color
   winScreen.style.textShadow = '0 0 20px ' + color
   winScreen.style.display = 'block'
@@ -584,11 +588,11 @@ function showFinalWinner(text) {
 // A character's health hit zero: award the round, then end the match or transition to the next round
 function showWinner(text) {
   if (gameOver || roundTransition) return
-  const winner = text.startsWith('VAMPIRE LORD') ? 'opponent' : 'ironDragon'
+  const winner = text.startsWith('VAMPIRE') ? 'opponent' : 'ironDragon'
   roundsWon[winner] += 1
   updateRoundScore()
   if (roundsWon[winner] >= ROUNDS_TO_WIN) {
-    showFinalWinner(winner === 'opponent' ? 'VAMPIRE LORD WINS' : 'IRON DRAGON WINS!')
+    showFinalWinner(winner === 'opponent' ? 'VAMPIRE LIEUTENANT WINS' : 'IRON DRAGON WINS!')
     return
   }
   // Round won but match continues: announce and pause before the next round
@@ -724,7 +728,7 @@ function animate(timestamp) {
     }
   }
 
-  // Vampire Lord AI: wait AI_START_DELAY, then move toward Iron Dragon and attack
+  // Vampire Lieutenant AI: wait AI_START_DELAY, then move toward Iron Dragon and attack
   roundTimer += delta
   const aiActive = roundTimer >= AI_START_DELAY
   const aiDistance = Math.abs(opponent.position.x - ironDragon.position.x)
@@ -736,6 +740,23 @@ function animate(timestamp) {
   if (aiActive) {
     opponent.position.x += Math.random() * 0.01 - 0.005
     opponent.position.x = Math.max(-7, Math.min(7, opponent.position.x))
+  }
+
+  // Vampire speed: blink 1 unit closer to Iron Dragon every VAMPIRE_TELEPORT_INTERVAL seconds
+  if (aiActive) {
+    vampireTeleportTimer += delta
+    if (vampireTeleportTimer >= VAMPIRE_TELEPORT_INTERVAL) {
+      vampireTeleportTimer = 0
+      const blinkDir = ironDragon.position.x < opponent.position.x ? -1 : 1
+      const blinkX = opponent.position.x + blinkDir * 1
+      // Don't blink past Iron Dragon or inside the minimum stance distance
+      if (Math.abs(blinkX - ironDragon.position.x) >= AI_MIN_DISTANCE) {
+        opponent.position.x = Math.max(-7, Math.min(7, blinkX))
+      }
+      // Red flash to telegraph the vampire-speed power
+      opponent.material.color.setHex(0xff0000)
+      opponentFlashTimer = 0.2
+    }
   }
 
   opponentAttackTimer += delta
@@ -768,7 +789,7 @@ function animate(timestamp) {
     camera.position.y += (Math.random() - 0.5) * 0.3
 
     if (ironDragonHealth <= 0) {
-      showWinner('VAMPIRE LORD WINS')
+      showWinner('VAMPIRE LIEUTENANT WINS')
     }
   }
 
