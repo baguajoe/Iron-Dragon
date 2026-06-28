@@ -12,6 +12,36 @@ renderer.setSize(window.innerWidth, window.innerHeight)
 renderer.shadowMap.enabled = true
 document.body.appendChild(renderer.domElement)
 
+// Procedural sound effects via the Web Audio API (no external files)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+
+// Play a single oscillator tone that sweeps frequency and fades its gain out cleanly
+function playTone(type, freqStart, freqEnd, duration, gain = 0.3) {
+  // Browsers start the context suspended until a user gesture; resume on demand
+  if (audioCtx.state === 'suspended') audioCtx.resume()
+  const now = audioCtx.currentTime
+  const osc = audioCtx.createOscillator()
+  const gainNode = audioCtx.createGain()
+  osc.type = type
+  osc.frequency.setValueAtTime(freqStart, now)
+  osc.frequency.linearRampToValueAtTime(freqEnd, now + duration)
+  gainNode.gain.setValueAtTime(gain, now)
+  gainNode.gain.exponentialRampToValueAtTime(0.0001, now + duration)
+  osc.connect(gainNode)
+  gainNode.connect(audioCtx.destination)
+  osc.start(now)
+  osc.stop(now + duration)
+}
+
+// Hit: short sharp thud when a J attack lands
+const playHitSound = () => playTone('sawtooth', 150, 50, 0.1)
+// Chi charge: rising tone when the Chi stage increases
+const playChiChargeSound = () => playTone('sine', 200, 400, 0.3)
+// Dragon Pulse: descending whoosh when K fires
+const playDragonPulseSound = () => playTone('sine', 300, 100, 0.4)
+// Iron Shirt: metallic clang when I activates
+const playIronShirtSound = () => playTone('square', 400, 400, 0.2)
+
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(20, 5),
   new THREE.MeshStandardMaterial({ color: 0x1a0a2e })
@@ -358,6 +388,7 @@ window.addEventListener('keydown', e => {
   }
   if (e.code === 'KeyK' && !gameOver && !dragonPulse && chi >= CHI_PULSE_THRESHOLD) {
     chi -= CHI_PULSE_COST
+    playDragonPulseSound()
     updateChiBar()
     dragonPulse = new THREE.Mesh(
       new THREE.BoxGeometry(2, 2, 2),
@@ -397,6 +428,7 @@ window.addEventListener('keydown', e => {
   // Iron Shirt: spend Chi to become invulnerable for a few seconds
   if (e.code === 'KeyI' && !gameOver && !ironShirtActive && chi >= IRON_SHIRT_COST) {
     chi -= IRON_SHIRT_COST
+    playIronShirtSound()
     updateChiBar()
     ironShirtActive = true
     ironShirtTimer = IRON_SHIRT_DURATION
@@ -668,6 +700,7 @@ function animate(timestamp) {
       const distance = Math.abs(ironDragon.position.x - opponent.position.x)
       if (distance < ATTACK_RANGE) {
         attackHit = true
+        playHitSound()
         const attackDamage = (baguaBuffTimer > 0 ? J_DAMAGE * BAGUA_DAMAGE_MULT : J_DAMAGE) * damageBoost()
         opponentHealth = Math.max(0, opponentHealth - attackDamage)
         updateHealthBars()
@@ -834,6 +867,7 @@ function animate(timestamp) {
   // Chi stages: announce stage changes and keep Iron Dragon's resting color in sync with Chi
   const newChiStage = getChiStage()
   if (newChiStage !== chiStage) {
+    if (newChiStage > chiStage) playChiChargeSound()
     chiStage = newChiStage
     const hex = '#' + CHI_STAGE_COLORS[chiStage - 1].toString(16).padStart(6, '0')
     chiStageText.textContent = 'CHI STAGE ' + chiStage
