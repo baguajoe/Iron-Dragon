@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x111111)
+scene.background = new THREE.Color(0x050015)
+scene.fog = new THREE.FogExp2(0x050015, 0.04)
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
 camera.position.set(0, 2, 8)
@@ -13,7 +14,7 @@ document.body.appendChild(renderer.domElement)
 
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(20, 5),
-  new THREE.MeshStandardMaterial({ color: 0x222222 })
+  new THREE.MeshStandardMaterial({ color: 0x1a0a2e })
 )
 floor.rotation.x = -Math.PI / 2
 floor.receiveShadow = true
@@ -24,6 +25,13 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.2)
 sun.position.set(5, 10, 5)
 sun.castShadow = true
 scene.add(sun)
+
+// Torches lining the arena cast a flickering orange glow
+for (const torchX of [-6, -2, 2, 6]) {
+  const torch = new THREE.PointLight(0xff6600, 2, 8)
+  torch.position.set(torchX, 3, -2)
+  scene.add(torch)
+}
 
 const ironDragon = new THREE.Mesh(
   new THREE.BoxGeometry(1, 2, 1),
